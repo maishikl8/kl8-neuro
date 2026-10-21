@@ -75,5 +75,13 @@ app.post('/api/license/use', (req,res)=>{
   db[licenseKey].remaining -= 1;
   res.json({ok:true, remaining: db[licenseKey].remaining});
 });
+let GLOBAL_POOL = null;
 
+app.get('/api/pool', (req, res) => {
+  // ... 
+});
+
+app.post('/api/pool/save', express.json(...), (req, res) => {
+  // ...
+});
 app.listen(10000, ()=> console.log('Server running on port 10000, receive:', RECEIVE_ADDRESS));
