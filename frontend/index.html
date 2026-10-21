@@ -300,64 +300,65 @@ body.green-killed { overflow:auto !important; }
 })();
 </script>
 
-<script id="kl8-v9-clean">
-// V9 干净终极版 - 无频闪，前后台都同步67组
+<script id="kl8-v10-final">
+// V10 终极修复 - 不碰innerHTML，按钮可点，前后台同步
 (function(){
   const BACKEND = "https://kl8-neuro.onrender.com";
   const KEY = "KL8_POOL_DATA";
-  let cloudPool = null;
+  const RELOAD_KEY = "kl8_v10_reloaded";
 
-  async function loadCloud(){
+  async function syncFromCloud(){
     try{
       const res = await fetch(BACKEND + "/api/pool?t=" + Date.now(), {cache:"no-store"});
       const data = await res.json();
-      if(data && data.ok && data.pool && data.pool.length>0){
-        cloudPool = data.pool;
+      if(!data || !data.ok || !data.pool || !data.pool.length) return;
+      const cloudPool = data.pool;
+      let localPool = [];
+      try{ localPool = JSON.parse(localStorage.getItem(KEY) || "[]"); }catch(e){}
+      if(cloudPool.length !== localPool.length){
         localStorage.setItem(KEY, JSON.stringify(cloudPool));
-        console.log("[V9] Cloud loaded", cloudPool.length);
-        // 如果当前页面显示的还是12组，更新一下文本
-        setTimeout(function(){
-          document.body.innerHTML = document.body.innerHTML.replace(/当前共\s*12\s*组/g, "当前共  "+cloudPool.length+"  组");
-          document.body.innerHTML = document.body.innerHTML.replace(/\(12组\)/g, "("+cloudPool.length+"组)");
-          document.body.innerHTML = document.body.innerHTML.replace(/已载入\s*12\s*组/g, "已载入  "+cloudPool.length+"  组");
-        }, 800);
-        return cloudPool;
+        console.log("[V10] Cloud pool different, local", localPool.length, "cloud", cloudPool.length, "updating and reloading once");
+        if(!sessionStorage.getItem(RELOAD_KEY)){
+          sessionStorage.setItem(RELOAD_KEY, "1");
+          location.reload();
+        }
       }
-    }catch(e){ console.log("[V9] load fail", e.message); }
-    return null;
+    }catch(e){ console.log("[V10] sync fail", e.message); }
   }
 
-  // 劫持alert，在保存后同步到云端
-  const _alert = window.alert;
+  // 保存时同步到云端 - 不破坏页面
+  const origAlert = window.alert;
   window.alert = function(msg){
     if(typeof msg === 'string' && msg.includes('已保存') && msg.includes('组')){
       let pool = [];
-      try{ pool = JSON.parse(localStorage.getItem(KEY)||"[]"); }catch(e){}
+      try{ pool = JSON.parse(localStorage.getItem(KEY) || "[]"); }catch(e){}
       if(pool.length>0){
+        // 先显示本地保存成功
+        origAlert.call(window, msg);
+        // 后台悄悄同步到云端
         fetch(BACKEND + "/api/pool/save", {
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify({pool: pool})
         }).then(r=>r.json()).then(d=>{
           if(d.ok){
-            _alert.call(window, "✅ 已同步到云端！共"+d.count+"组\n前台所有用户将看到"+d.count+"组");
-          } else {
-            _alert.call(window, msg + "\n云端同步失败：" + (d.msg||"未知"));
+            // 用非阻塞方式提示，不影响按钮
+            setTimeout(function(){
+              origAlert.call(window, "✅ 已同步到云端！共"+d.count+"组");
+            }, 500);
           }
-        }).catch(function(){
-          _alert.call(window, msg + "\n(本地已保存，云端同步失败，请检查后端)");
-        });
+        }).catch(function(){});
         return;
       }
     }
-    return _alert.apply(window, arguments);
+    return origAlert.apply(window, arguments);
   };
 
-  // 启动时加载
+  // 启动同步
   if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', loadCloud);
+    document.addEventListener('DOMContentLoaded', syncFromCloud);
   } else {
-    loadCloud();
+    syncFromCloud();
   }
 })();
 </script>
