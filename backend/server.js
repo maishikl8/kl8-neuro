@@ -1,8 +1,12 @@
 
-const express = require('express');
-const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+import express from 'express';
+import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors({ origin: '*', methods: ['GET','POST','OPTIONS'], allowedHeaders: ['Content-Type'] }));
@@ -45,32 +49,28 @@ function savePool(){ try{ fs.writeFileSync(POOL_FILE, JSON.stringify(GLOBAL_POOL
 function saveLicenses(){ try{ fs.writeFileSync(LICENSE_FILE, JSON.stringify(LICENSES)); }catch(e){} }
 loadData();
 
-app.get('/', (req,res)=>res.json({ok:true, msg:'KL8 Backend V2 Running', poolCount:GLOBAL_POOL.length, endpoints:['/api/pool','/api/pool/save']}));
+app.get('/', (req,res)=>res.json({ok:true, msg:'KL8 Backend ESM V3 Running', poolCount:GLOBAL_POOL.length, endpoints:['/api/pool','/api/pool/save']}));
 app.get('/api/pool', (req,res)=>res.json({ok:true, pool:GLOBAL_POOL, count:GLOBAL_POOL.length}));
 
 app.post('/api/pool/save', (req,res)=>{
-  console.log('[SAVE] body keys', Object.keys(req.body));
   let pool = req.body.pool;
-  if(!pool && req.body.data) pool = req.body.data; //兼容
+  if(!pool && req.body.data) pool = req.body.data;
   if(!Array.isArray(pool) || pool.length===0){
-    console.log('[SAVE] invalid pool', typeof pool);
     return res.status(400).json({ok:false, msg:'pool空或格式错误'});
   }
-  // 清洗数据：确保都是数字数组
   const cleaned = [];
   for(let row of pool){
     if(!Array.isArray(row)) continue;
     const nums = row.map(n=>parseInt(n)).filter(n=>!isNaN(n) && n>=1 && n<=80).slice(0,8);
     if(nums.length===8) cleaned.push(nums);
   }
-  if(cleaned.length===0) return res.status(400).json({ok:false, msg:'清洗后0组，检查格式'});
+  if(cleaned.length===0) return res.status(400).json({ok:false, msg:'清洗后0组'});
   GLOBAL_POOL = cleaned;
   savePool();
   console.log(`[ADMIN] Pool saved ${cleaned.length} groups`);
   res.json({ok:true, count:cleaned.length});
 });
 
-const USDT_ADDRESS = "TEPYpqXqXbEPKx4nSYWDJQ8idaBxiNG4jh";
 app.post('/api/payment/verify', async (req,res)=>{
   const {txHash} = req.body;
   if(!txHash || txHash.length<10) return res.json({ok:false, msg:'哈希无效'});
@@ -89,4 +89,4 @@ app.post('/api/license/verify', (req,res)=>{
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, ()=>console.log(`KL8 V2 running ${PORT} pool ${GLOBAL_POOL.length}`));
+app.listen(PORT, ()=>console.log(`KL8 ESM V3 running ${PORT} pool ${GLOBAL_POOL.length}`));
