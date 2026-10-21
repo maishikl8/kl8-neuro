@@ -21,7 +21,46 @@
 :where(code, pre, kbd, samp) {
   font-family: "Optimistic Mono", ui-monospace, monospace;
 }
-</style><style>
+</style>
+<script>
+// V4: 最高优先级，页面任何代码执行前就去云端拉67组
+(async function(){
+  const BACKEND = "https://kl8-neuro.onrender.com";
+  const KEY = 'KL8_POOL_DATA';
+  try{
+    const r = await fetch(BACKEND + '/api/pool?t=' + Date.now(), {cache:'no-store', mode:'cors'});
+    const d = await r.json();
+    if(d && d.ok && d.pool && d.pool.length > 0){
+      const cloudLen = d.pool.length;
+      localStorage.setItem(KEY, JSON.stringify(d.pool));
+      // 把云端数量写到全局变量，供后面渲染用
+      window.__CLOUD_POOL__ = d.pool;
+      window.__CLOUD_POOL_LEN__ = cloudLen;
+      console.log('[V4] Cloud pool loaded:', cloudLen);
+      // 立刻改掉页面上所有显示12组的文字
+      const fixBadge = ()=> {
+        document.querySelectorAll('*').forEach(el=>{
+          if(el.childNodes.length===1 && el.textContent && el.textContent.trim()==='当前共  67  组 [云端同步版V4]'){
+            el.textContent='当前共  '+cloudLen+'  组';
+          }
+          if(el.textContent && el.textContent.includes('当前共  67  组 [云端同步版V4]')){
+            el.innerHTML = el.innerHTML.replace('当前共  67  组 [云端同步版V4]','当前共  '+cloudLen+'  组');
+            el.textContent = el.textContent.replace('当前共  67  组 [云端同步版V4]','当前共  '+cloudLen+'  组');
+          }
+        });
+      };
+      fixBadge();
+      setInterval(fixBadge, 500);
+      document.addEventListener('DOMContentLoaded', fixBadge);
+    }
+  }catch(e){
+    console.error('[V4] Cloud fetch failed', e);
+  }
+})();
+</script>
+
+<!-- KL8 FINAL V4 FORCE CLOUD SYNC 67 GROUPS BUILD 1792592948.2127028 -->
+<style>
 @font-face {
   font-family: "Optimistic";
   font-style: normal;
