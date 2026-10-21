@@ -210,6 +210,95 @@ body.green-killed { overflow:auto !important; }
   document.addEventListener('DOMContentLoaded', ()=>{killGreen(); hijack();});
 })();
 </script>
+
+<script>
+(function(){
+  // 覆盖旧的初选池编辑器逻辑 - 无上限版本
+  function initUnlimitedPoolEditor(){
+    // 找到初选池批量管理的容器
+    const check = setInterval(()=>{
+      const btns = Array.from(document.querySelectorAll('button')).filter(b=>b.textContent.includes('打开编辑器'));
+      if(btns.length===0) return;
+      const openBtn = btns[0];
+      if(openBtn.dataset.fixed) return;
+      openBtn.dataset.fixed='1';
+      
+      openBtn.onclick = function(){
+        // 创建全屏编辑器
+        document.getElementById('kl8-pool-editor')?.remove();
+        const currentData = (() => {
+          try {
+            const stored = localStorage.getItem('KL8_POOL_DATA');
+            if(stored) return JSON.parse(stored);
+          } catch(e){}
+          // 默认12组
+          return [[5,12,23,34,45,56,67,78],[2,14,26,33,48,59,61,73],[8,19,27,36,44,52,66,80],[11,22,31,40,50,63,72,77],[4,17,28,39,47,58,69,74],[1,15,24,35,46,55,68,79],[6,18,29,37,43,54,62,71],[9,20,32,41,49,60,65,75],[3,13,25,38,42,53,64,70],[10,16,30,46,51,57,76,80],[7,21,33,44,48,59,66,73],[12,24,35,46,57,68,79,80]];
+        })();
+        
+        const editor = document.createElement('div');
+        editor.id='kl8-pool-editor';
+        editor.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:9999999;padding:16px;display:flex;flex-direction:column;';
+        const textValue = currentData.map(row=>row.join(', ')).join('\n');
+        editor.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <b style="color:#fff;font-size:16px;">初选池编辑 - 无上限 (当前 ${currentData.length} 组)</b>
+            <button id="kl8-close-editor" style="background:#1e3a5f;border:none;border-radius:8px;padding:8px 14px;color:#fff;">✕ 关闭</button>
+          </div>
+          <div style="color:#8aa0c0;font-size:12px;margin-bottom:8px;">每行8个号码，空格或逗号分隔，支持1000+组。粘贴后点保存。</div>
+          <textarea id="kl8-pool-textarea" style="flex:1;background:#0a1429;border:1px solid #1e4a5f;border-radius:12px;padding:12px;color:#4fc3f7;font-family:monospace;font-size:13px;resize:none;">${textValue}</textarea>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button id="kl8-save-pool" style="flex:1;background:#00e676;border:none;border-radius:10px;padding:14px;font-weight:bold;font-size:15px;color:#000;">保存 - 共 <span id="kl8-count">${currentData.length}</span> 组</button>
+            <button id="kl8-clear-pool" style="background:#ff1744;border:none;border-radius:10px;padding:14px;color:#fff;">清空</button>
+          </div>
+        `;
+        document.body.appendChild(editor);
+        
+        const ta = document.getElementById('kl8-pool-textarea');
+        const countSpan = document.getElementById('kl8-count');
+        const updateCount = ()=>{
+          const lines = ta.value.split('\n').filter(l=>l.trim().length>0);
+          let valid=0;
+          lines.forEach(l=>{
+            const nums = l.split(/[\s,，]+/).filter(x=>x).map(x=>parseInt(x)).filter(n=>!isNaN(n));
+            if(nums.length>=8) valid++;
+          });
+          countSpan.textContent=valid;
+        };
+        ta.addEventListener('input', updateCount);
+        
+        document.getElementById('kl8-close-editor').onclick = ()=>editor.remove();
+        document.getElementById('kl8-clear-pool').onclick = ()=>{ if(confirm('清空全部？')){ ta.value=''; updateCount(); } };
+        document.getElementById('kl8-save-pool').onclick = ()=>{
+          const lines = ta.value.split('\n').filter(l=>l.trim().length>0);
+          const pool=[];
+          let errors=[];
+          lines.forEach((line, idx)=>{
+            const nums = line.split(/[\s,，]+/).filter(x=>x).map(x=>parseInt(x)).filter(n=>!isNaN(n));
+            if(nums.length<8){ errors.push('第'+(idx+1)+'行不足8个'); return; }
+            if(nums.length>8) nums.splice(8);
+            pool.push(nums);
+          });
+          if(errors.length>0 && pool.length===0){ alert('格式错误:\n'+errors.join('\n')); return; }
+          localStorage.setItem('KL8_POOL_DATA', JSON.stringify(pool));
+          // 同时触发全局更新
+          try { window.dispatchEvent(new CustomEvent('kl8-pool-updated', {detail:pool})); } catch(e){}
+          alert('已保存 '+pool.length+' 组！刷新后生效。');
+          editor.remove();
+          location.reload();
+        };
+      };
+      
+      // 清空按钮
+      const clearBtn = Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('清空全部'));
+      if(clearBtn && !clearBtn.dataset.fixed){
+        clearBtn.dataset.fixed='1';
+        clearBtn.onclick = ()=>{ if(confirm('确定清空初选池全部数据？')){ localStorage.removeItem('KL8_POOL_DATA'); location.reload(); } };
+      }
+    }, 800);
+  }
+  initUnlimitedPoolEditor();
+})();
+</script>
 <script>(function(){var loc=location.href.replace(/#.*$/,"");var ATTR_NAMES=["data-product-id","data-productid","data-product_id","product-id","productid","product_id","data-source-entity-id","source-entity-id","source_entity_id","data-product","data-metadata","data-meta"];var DATASET_KEYS=["productId","productid","product_id","sourceEntityId","sourceentityid","source_entity_id","product","metadata","meta"];function readProductId(value){if(typeof value!=="string"||value.length===0)return null;if(/^[0-9]{6,}$/.test(value))return value;var match=value.match(/(?:product(?:_|-)?id|source(?:_|-)?entity(?:_|-)?id)["'=:\s]+([0-9]{6,})/i);return match?match[1]:null}function extractProductId(start){for(var node=start;node&&node!==document.body;node=node.parentElement){for(var i=0;i<ATTR_NAMES.length;i++){var attrValue=node.getAttribute&&node.getAttribute(ATTR_NAMES[i]);var attrProductId=readProductId(attrValue);if(attrProductId)return attrProductId}var dataset=node.dataset||null;if(dataset){for(var j=0;j<DATASET_KEYS.length;j++){var dataValue=dataset[DATASET_KEYS[j]];var dataProductId=readProductId(dataValue);if(dataProductId)return dataProductId}}}return null}function isInlineMediaSlotElement(node){return !!(node&&node.getAttribute&&node.getAttribute("data-clippy-inline-media-slot")!==null)}function findInlineMediaSlot(start){for(var node=start;node&&node!==document.body;node=node.parentElement){if(isInlineMediaSlotElement(node))return node}return null}function readInlineMediaUrl(node){if(!node)return null;return node.getAttribute&&((node.getAttribute("data-clippy-inline-media-url")||node.getAttribute("data-url")||node.getAttribute("data_url")))||node.href||null}function stripHash(url){return String(url).replace(/#.*$/,"")}function urlsMatch(a,b){if(!a||!b)return false;try{return stripHash(new URL(a,loc).href)===stripHash(new URL(b,loc).href)}catch(_){return stripHash(a)===stripHash(b)}}function isFirstPartyReelUrl(value){try{var url=new URL(value,loc);if(url.protocol!=="https:")return false;var host=url.hostname.toLowerCase();var supported=host==="instagram.com"||host.endsWith(".instagram.com")||host==="facebook.com"||host.endsWith(".facebook.com");return supported&&/\/reels?\//i.test(url.pathname)}catch(_){return false}}function isInlineMediaUrlClick(node,href){var slot=findInlineMediaSlot(node);if(!slot)return false;var slotUrl=readInlineMediaUrl(slot);if(slotUrl)return urlsMatch(href,slotUrl);return isFirstPartyReelUrl(href)}function findDataHref(start){for(var node=start;node&&node!==document.body;node=node.parentElement){if(node.getAttribute){var href=node.getAttribute("data-href")||node.getAttribute("data-url");if(href)return{href:href,node:node}}}return null}var nativeOpen=window.open;window.open=function(url){if(parent!==window&&typeof url==="string"&&/^https?:\/\//.test(url)){parent.postMessage({type:"ecto:usercontent-link-click",href:url},"*");return null}return nativeOpen?nativeOpen.apply(window,arguments):null};document.addEventListener("click",function(e){var target=e.target instanceof Element?e.target:null;if(!target)return;if(parent===window)return;var a=target.closest?target.closest("a[href]"):null;if(a&&a.href&&/^https?:\/\//.test(a.href)&&a.href.replace(/#.*$/,"")!==loc){if(isInlineMediaUrlClick(a,a.href))return;var productId=extractProductId(target)||extractProductId(a);if(productId){e.preventDefault();parent.postMessage({type:"ecto-artifact-link-click",productId:productId},"*");return}e.preventDefault();parent.postMessage({type:"ecto:usercontent-link-click",href:a.href},"*");return}var dataHref=findDataHref(target);if(dataHref&&/^https?:\/\//.test(dataHref.href)&&dataHref.href.replace(/#.*$/,"")!==loc){if(isInlineMediaUrlClick(dataHref.node,dataHref.href))return;e.preventDefault();parent.postMessage({type:"ecto:usercontent-link-click",href:dataHref.href},"*")}},true)})();</script><script>(function(){var FOCUS_TYPE="ecto:artifact-focus-request";var CLOSE_TYPE="ecto:artifact-close-request";function focusArtifactDocument(){var body=document.body;if(!body)return;try{window.focus();}catch(e){}if(!body.hasAttribute("tabindex"))body.setAttribute("tabindex","-1");try{body.focus({preventScroll:true});}catch(e){try{body.focus();}catch(e2){}}}window.addEventListener("message",function(event){if(event.source!==window.parent)return;var data=event.data;if(!data||typeof data!=="object"||data.type!==FOCUS_TYPE)return;if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",focusArtifactDocument,{once:true});return;}focusArtifactDocument();});window.addEventListener("keydown",function(event){if(event.key!=="Escape")return;window.setTimeout(function(){if(event.defaultPrevented)return;window.parent.postMessage({type:CLOSE_TYPE},"*");},0);});})();</script></body>
 
 </html>
