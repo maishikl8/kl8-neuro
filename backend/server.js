@@ -5,18 +5,13 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 10000;
-
-// ===== 中间件 =====
-app.use(cors({ origin: '*' }));
-app.use(express.json({ limit: '5mb' }));
+app.use(cors({ origin: '*', methods: ['GET','POST','OPTIONS'], allowedHeaders: ['Content-Type'] }));
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ===== 持久化文件路径 =====
 const POOL_FILE = path.join(__dirname, 'pool.json');
 const LICENSE_FILE = path.join(__dirname, 'licenses.json');
 
-// ===== 默认初选池 12组 =====
 const DEFAULT_POOL = [
   [5,12,23,34,45,56,67,78],
   [2,14,26,33,48,59,61,73],
@@ -35,110 +30,63 @@ const DEFAULT_POOL = [
 let GLOBAL_POOL = null;
 let LICENSES = {};
 
-// 加载持久化数据
 function loadData(){
   try{
     if(fs.existsSync(POOL_FILE)){
       GLOBAL_POOL = JSON.parse(fs.readFileSync(POOL_FILE,'utf8'));
-      console.log('[LOAD] Pool loaded:', GLOBAL_POOL.length);
-    }else{
-      GLOBAL_POOL = DEFAULT_POOL;
-    }
-  }catch(e){
-    console.log('[LOAD] Pool load fail, use default', e.message);
-    GLOBAL_POOL = DEFAULT_POOL;
-  }
+      console.log('[LOAD] Pool', GLOBAL_POOL.length);
+    }else GLOBAL_POOL = DEFAULT_POOL;
+  }catch(e){ GLOBAL_POOL = DEFAULT_POOL; }
   try{
-    if(fs.existsSync(LICENSE_FILE)){
-      LICENSES = JSON.parse(fs.readFileSync(LICENSE_FILE,'utf8'));
-    }
-  }catch(e){
-    LICENSES = {};
-  }
+    if(fs.existsSync(LICENSE_FILE)) LICENSES = JSON.parse(fs.readFileSync(LICENSE_FILE,'utf8'));
+  }catch(e){ LICENSES = {}; }
 }
-function savePool(){
-  try{ fs.writeFileSync(POOL_FILE, JSON.stringify(GLOBAL_POOL, null, 2)); }catch(e){ console.log('save pool fail', e.message); }
-}
-function saveLicenses(){
-  try{ fs.writeFileSync(LICENSE_FILE, JSON.stringify(LICENSES, null, 2)); }catch(e){}
-}
+function savePool(){ try{ fs.writeFileSync(POOL_FILE, JSON.stringify(GLOBAL_POOL)); }catch(e){} }
+function saveLicenses(){ try{ fs.writeFileSync(LICENSE_FILE, JSON.stringify(LICENSES)); }catch(e){} }
 loadData();
 
-// ===== 基础路由 =====
-app.get('/', (req, res) => {
-  res.json({ok:true, msg:'KL8 NEURO Backend Running', poolCount: GLOBAL_POOL?.length||0, time: new Date().toISOString()});
-});
+app.get('/', (req,res)=>res.json({ok:true, msg:'KL8 Backend V2 Running', poolCount:GLOBAL_POOL.length, endpoints:['/api/pool','/api/pool/save']}));
+app.get('/api/pool', (req,res)=>res.json({ok:true, pool:GLOBAL_POOL, count:GLOBAL_POOL.length}));
 
-// ===== B方案核心：初选池接口 =====
-app.get('/api/pool', (req, res) => {
-  res.json({ok:true, pool: GLOBAL_POOL, count: GLOBAL_POOL.length, updatedAt: new Date().toISOString()});
-});
-
-app.post('/api/pool/save', (req, res) => {
-  const {pool, adminKey} = req.body;
+app.post('/api/pool/save', (req,res)=>{
+  console.log('[SAVE] body keys', Object.keys(req.body));
+  let pool = req.body.pool;
+  if(!pool && req.body.data) pool = req.body.data; //兼容
   if(!Array.isArray(pool) || pool.length===0){
-    return res.json({ok:false, msg:'pool数据为空'});
+    console.log('[SAVE] invalid pool', typeof pool);
+    return res.status(400).json({ok:false, msg:'pool空或格式错误'});
   }
-  if(pool.length>5000){
-    return res.json({ok:false, msg:'最多支持5000组，当前'+pool.length});
+  // 清洗数据：确保都是数字数组
+  const cleaned = [];
+  for(let row of pool){
+    if(!Array.isArray(row)) continue;
+    const nums = row.map(n=>parseInt(n)).filter(n=>!isNaN(n) && n>=1 && n<=80).slice(0,8);
+    if(nums.length===8) cleaned.push(nums);
   }
-  // 简单校验每组8个数字
-  for(let i=0;i<pool.length;i++){
-    if(!Array.isArray(pool[i]) || pool[i].length<8){
-      return res.json({ok:false, msg:`第${i+1}组不足8个号码`});
-    }
-  }
-  GLOBAL_POOL = pool;
+  if(cleaned.length===0) return res.status(400).json({ok:false, msg:'清洗后0组，检查格式'});
+  GLOBAL_POOL = cleaned;
   savePool();
-  console.log(`[ADMIN] Pool updated to ${pool.length} groups`);
-  res.json({ok:true, count: pool.length, msg:'同步成功'});
+  console.log(`[ADMIN] Pool saved ${cleaned.length} groups`);
+  res.json({ok:true, count:cleaned.length});
 });
 
-// ===== 支付验证 (你原来的) =====
 const USDT_ADDRESS = "TEPYpqXqXbEPKx4nSYWDJQ8idaBxiNG4jh";
-app.post('/api/payment/verify', async (req, res) => {
+app.post('/api/payment/verify', async (req,res)=>{
   const {txHash} = req.body;
-  if(!txHash || txHash.length<20){
-    return res.json({ok:false, msg:'交易哈希无效'});
-  }
-  // TODO: 这里可以接 TronGrid API 真实验证，目前为演示版
-  // 真实验证示例：
-  // const tronRes = await fetch(`https://api.trongrid.io/v1/transactions/${txHash}`);
-  // 校验 to_address == USDT_ADDRESS && amount == 10*1e6
-
-  // 演示：任何哈希都通过，并生成授权码
+  if(!txHash || txHash.length<10) return res.json({ok:false, msg:'哈希无效'});
   const licenseKey = 'KL8-' + Math.random().toString(36).substring(2,8).toUpperCase() + '-' + Date.now().toString().slice(-6);
-  LICENSES[licenseKey] = {
-    count: 10,
-    used: 0,
-    createdAt: new Date().toISOString(),
-    txHash: txHash
-  };
+  LICENSES[licenseKey] = {count:10, used:0, createdAt:new Date().toISOString(), txHash};
   saveLicenses();
-  console.log('[PAY] New license', licenseKey, 'for', txHash);
-  res.json({ok:true, licenseKey: licenseKey, count:10, msg:'支付验证成功'});
+  res.json({ok:true, licenseKey, count:10});
 });
-
-// ===== 授权码验证 =====
-app.post('/api/license/verify', (req, res) => {
+app.post('/api/license/verify', (req,res)=>{
   const {licenseKey} = req.body;
   const lic = LICENSES[licenseKey];
-  if(!lic){
-    return res.json({ok:false, msg:'授权码不存在'});
-  }
-  if(lic.used >= lic.count){
-    return res.json({ok:false, msg:'次数已用完'});
-  }
-  lic.used++;
-  saveLicenses();
-  res.json({ok:true, remaining: lic.count - lic.used, pool: GLOBAL_POOL});
+  if(!lic) return res.json({ok:false, msg:'授权码不存在'});
+  if(lic.used >= lic.count) return res.json({ok:false, msg:'次数用完'});
+  lic.used++; saveLicenses();
+  res.json({ok:true, remaining: lic.count-lic.used, pool:GLOBAL_POOL});
 });
 
-app.get('/api/license/list', (req, res) => {
-  res.json({ok:true, licenses: LICENSES});
-});
-
-// ===== 启动 =====
-app.listen(PORT, () => {
-  console.log(`KL8 Backend running on ${PORT}, Pool: ${GLOBAL_POOL.length} groups`);
-});
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, ()=>console.log(`KL8 V2 running ${PORT} pool ${GLOBAL_POOL.length}`));
