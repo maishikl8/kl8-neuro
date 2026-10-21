@@ -208,6 +208,118 @@ const RECEIVE_ADDR = "TEPYpqXqXbEPKx4nSYWDJQ8idaBxiNG4jh";
   else patch();
 })();
 </script>
+
+<script>
+// === 修复支付流程 ===
+(function(){
+  const RECEIVE_ADDR = "TEPYpqXqXbEPKx4nSYWDJQ8idaBxiNG4jh";
+  const USDT_AMOUNT = 10;
+
+  // 覆盖原来的支付按钮
+  function createPaymentModal(){
+    // 删除旧的可能存在的弹窗
+    document.getElementById('kl8-pay-modal')?.remove();
+    
+    const modal = document.createElement('div');
+    modal.id='kl8-pay-modal';
+    modal.style.cssText='position:fixed;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:999999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    modal.innerHTML = `
+      <div style="background:#0f1f3a;border:1px solid #1e3a5f;border-radius:16px;padding:20px;width:100%;max-width:380px;color:#fff;font-family:monospace;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:18px;">支付 10 USDT (TRC20)</h3>
+          <button onclick="document.getElementById('kl8-pay-modal').remove()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;">✕</button>
+        </div>
+        
+        <div style="background:#fff;border-radius:12px;padding:12px;display:flex;justify-content:center;margin-bottom:16px;">
+          <div id="kl8-qr" style="width:180px;height:180px;display:flex;align-items:center;justify-content:center;background:#fff;color:#000;">二维码加载中...</div>
+        </div>
+        
+        <div style="margin-bottom:12px;">
+          <div style="font-size:12px;color:#8aa0c0;margin-bottom:4px;">收款地址 (TRC20):</div>
+          <div style="display:flex;gap:8px;">
+            <input id="kl8-addr" value="${RECEIVE_ADDR}" readonly style="flex:1;background:#0a1429;border:1px solid #1e3a5f;border-radius:8px;padding:8px 10px;color:#4fc3f7;font-size:11px;overflow:hidden;text-overflow:ellipsis;">
+            <button onclick="navigator.clipboard.writeText('${RECEIVE_ADDR}');this.textContent='已复制';setTimeout(()=>this.textContent='复制',1500)" style="background:#2196f3;border:none;border-radius:8px;padding:8px 14px;color:#000;font-weight:bold;cursor:pointer;white-space:nowrap;">复制</button>
+          </div>
+        </div>
+        
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px;color:#8aa0c0;margin-bottom:4px;">金额:</div>
+          <div style="background:#0a1429;border:1px solid #1e3a5f;border-radius:8px;padding:8px 10px;color:#fff;font-size:14px;">10 USDT</div>
+          <div style="font-size:11px;color:#ff9800;margin-top:6px;">⚠️ 请务必使用 TRC20 网络，否则无法到账</div>
+        </div>
+        
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <button id="kl8-verify-btn" style="background:#00e676;border:none;border-radius:10px;padding:12px;color:#000;font-weight:bold;font-size:15px;cursor:pointer;">我已支付，粘贴交易哈希验证</button>
+          <button onclick="document.getElementById('kl8-pay-modal').remove()" style="background:transparent;border:1px solid #1e3a5f;border-radius:10px;padding:10px;color:#8aa0c0;cursor:pointer;">取消</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // 生成二维码（用简单的QR API）
+    const qrDiv = document.getElementById('kl8-qr');
+    const qrImg = document.createElement('img');
+    qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(RECEIVE_ADDR);
+    qrImg.style.width='180px'; qrImg.style.height='180px';
+    qrDiv.innerHTML=''; qrDiv.appendChild(qrImg);
+    
+    // 绑定验证
+    document.getElementById('kl8-verify-btn').onclick = async function(){
+      const txHash = prompt('请粘贴 TRC20 交易哈希 TxHash:\n\n收款地址: '+RECEIVE_ADDR);
+      if(!txHash) return;
+      this.textContent='验证中...'; this.disabled=true;
+      try {
+        const BACKEND = localStorage.getItem('KL8_BACKEND') || 'https://kl8-neuro.onrender.com';
+        const res = await fetch(BACKEND + '/api/payment/verify', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({txHash: txHash.trim()})
+        });
+        const data = await res.json();
+        if(data.ok){
+          alert('验证成功！\n授权码：'+data.licenseKey+'\n剩余：'+data.remaining+'次\n\n请保存授权码！');
+          localStorage.setItem('KL8_LICENSE', data.licenseKey);
+          document.getElementById('kl8-pay-modal').remove();
+          location.reload();
+        } else {
+          alert('验证失败：'+data.msg);
+          this.textContent='我已支付，粘贴交易哈希验证'; this.disabled=false;
+        }
+      } catch(e){
+        alert('验证出错：'+e.message);
+        this.textContent='我已支付，粘贴交易哈希验证'; this.disabled=false;
+      }
+    };
+  }
+
+  // 劫持所有“支付10U”按钮
+  function hijackPayButtons(){
+    document.querySelectorAll('button').forEach(btn=>{
+      const t = btn.textContent.trim();
+      if(t.includes('支付10') && t.includes('解锁10')){
+        btn.onclick = function(e){
+          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+          createPaymentModal();
+          return false;
+        };
+      }
+    });
+  }
+
+  // 持续劫持，防止被其他JS覆盖
+  setInterval(hijackPayButtons, 1000);
+  document.addEventListener('DOMContentLoaded', hijackPayButtons);
+  hijackPayButtons();
+
+  // 隐藏那个绿色条的自动跳转
+  const style = document.createElement('style');
+  style.textContent = `
+    /* 隐藏空白页的自动跳转影响 */
+    body { overflow: auto !important; }
+  `;
+  document.head.appendChild(style);
+})();
+</script>
 <script>(function(){var loc=location.href.replace(/#.*$/,"");var ATTR_NAMES=["data-product-id","data-productid","data-product_id","product-id","productid","product_id","data-source-entity-id","source-entity-id","source_entity_id","data-product","data-metadata","data-meta"];var DATASET_KEYS=["productId","productid","product_id","sourceEntityId","sourceentityid","source_entity_id","product","metadata","meta"];function readProductId(value){if(typeof value!=="string"||value.length===0)return null;if(/^[0-9]{6,}$/.test(value))return value;var match=value.match(/(?:product(?:_|-)?id|source(?:_|-)?entity(?:_|-)?id)["'=:\s]+([0-9]{6,})/i);return match?match[1]:null}function extractProductId(start){for(var node=start;node&&node!==document.body;node=node.parentElement){for(var i=0;i<ATTR_NAMES.length;i++){var attrValue=node.getAttribute&&node.getAttribute(ATTR_NAMES[i]);var attrProductId=readProductId(attrValue);if(attrProductId)return attrProductId}var dataset=node.dataset||null;if(dataset){for(var j=0;j<DATASET_KEYS.length;j++){var dataValue=dataset[DATASET_KEYS[j]];var dataProductId=readProductId(dataValue);if(dataProductId)return dataProductId}}}return null}function isInlineMediaSlotElement(node){return !!(node&&node.getAttribute&&node.getAttribute("data-clippy-inline-media-slot")!==null)}function findInlineMediaSlot(start){for(var node=start;node&&node!==document.body;node=node.parentElement){if(isInlineMediaSlotElement(node))return node}return null}function readInlineMediaUrl(node){if(!node)return null;return node.getAttribute&&((node.getAttribute("data-clippy-inline-media-url")||node.getAttribute("data-url")||node.getAttribute("data_url")))||node.href||null}function stripHash(url){return String(url).replace(/#.*$/,"")}function urlsMatch(a,b){if(!a||!b)return false;try{return stripHash(new URL(a,loc).href)===stripHash(new URL(b,loc).href)}catch(_){return stripHash(a)===stripHash(b)}}function isFirstPartyReelUrl(value){try{var url=new URL(value,loc);if(url.protocol!=="https:")return false;var host=url.hostname.toLowerCase();var supported=host==="instagram.com"||host.endsWith(".instagram.com")||host==="facebook.com"||host.endsWith(".facebook.com");return supported&&/\/reels?\//i.test(url.pathname)}catch(_){return false}}function isInlineMediaUrlClick(node,href){var slot=findInlineMediaSlot(node);if(!slot)return false;var slotUrl=readInlineMediaUrl(slot);if(slotUrl)return urlsMatch(href,slotUrl);return isFirstPartyReelUrl(href)}function findDataHref(start){for(var node=start;node&&node!==document.body;node=node.parentElement){if(node.getAttribute){var href=node.getAttribute("data-href")||node.getAttribute("data-url");if(href)return{href:href,node:node}}}return null}var nativeOpen=window.open;window.open=function(url){if(parent!==window&&typeof url==="string"&&/^https?:\/\//.test(url)){parent.postMessage({type:"ecto:usercontent-link-click",href:url},"*");return null}return nativeOpen?nativeOpen.apply(window,arguments):null};document.addEventListener("click",function(e){var target=e.target instanceof Element?e.target:null;if(!target)return;if(parent===window)return;var a=target.closest?target.closest("a[href]"):null;if(a&&a.href&&/^https?:\/\//.test(a.href)&&a.href.replace(/#.*$/,"")!==loc){if(isInlineMediaUrlClick(a,a.href))return;var productId=extractProductId(target)||extractProductId(a);if(productId){e.preventDefault();parent.postMessage({type:"ecto-artifact-link-click",productId:productId},"*");return}e.preventDefault();parent.postMessage({type:"ecto:usercontent-link-click",href:a.href},"*");return}var dataHref=findDataHref(target);if(dataHref&&/^https?:\/\//.test(dataHref.href)&&dataHref.href.replace(/#.*$/,"")!==loc){if(isInlineMediaUrlClick(dataHref.node,dataHref.href))return;e.preventDefault();parent.postMessage({type:"ecto:usercontent-link-click",href:dataHref.href},"*")}},true)})();</script><script>(function(){var FOCUS_TYPE="ecto:artifact-focus-request";var CLOSE_TYPE="ecto:artifact-close-request";function focusArtifactDocument(){var body=document.body;if(!body)return;try{window.focus();}catch(e){}if(!body.hasAttribute("tabindex"))body.setAttribute("tabindex","-1");try{body.focus({preventScroll:true});}catch(e){try{body.focus();}catch(e2){}}}window.addEventListener("message",function(event){if(event.source!==window.parent)return;var data=event.data;if(!data||typeof data!=="object"||data.type!==FOCUS_TYPE)return;if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",focusArtifactDocument,{once:true});return;}focusArtifactDocument();});window.addEventListener("keydown",function(event){if(event.key!=="Escape")return;window.setTimeout(function(){if(event.defaultPrevented)return;window.parent.postMessage({type:CLOSE_TYPE},"*");},0);});})();</script></body>
 
 </html>
